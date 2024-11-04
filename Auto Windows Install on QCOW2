@@ -1,0 +1,99 @@
+#!/bin/bash
+
+# ================================
+# Personalisierungseinstellungen
+# ================================
+
+# Pfade und Dateinamen
+ISO_PATH="/home/nico-shock/Dokumente/Daten/ISOs/Windows 11/Win11_24H2_German_x64.iso"  # Pfad zur Windows-ISO-Datei
+QCOW2_PATH="./windows.qcow2"                                                             # Pfad zur zu erstellenden QCOW2-Datei im aktuellen Verzeichnis
+QCOW2_SIZE="70G"                                                                         # Größe der QCOW2-Datei
+EFI_PARTITION_SIZE="512M"                                                                # Größe der EFI-Partition
+AUTO_UNATTEND_PATH="./autounattend.xml"                                                  # Pfad zur Autounattend-Datei (wird im aktuellen Verzeichnis gesucht)
+
+# ================================
+# Start der Automatisierung
+# ================================
+
+# Installiere benötigte Pakete
+echo "Installiere QEMU und wimlib..."
+if command -v apt >/dev/null; then
+    sudo apt update && sudo apt install -y qemu qemu-kvm wimtools
+elif command -v dnf >/dev/null; then
+    sudo dnf install -y qemu-kvm qemu-img wimlib
+elif command -v pacman >/dev/null; then
+    sudo pacman -Syu --noconfirm qemu-base qemu-emulators-full wimlib
+else
+    echo "Paketmanager nicht unterstützt. Installiere QEMU und wimlib manuell."
+    exit 1
+fi
+
+# Erstelle die QCOW2-Datei
+echo "Erstelle QCOW2-Datei..."
+qemu-img create -f qcow2 "$QCOW2_PATH" "$QCOW2_SIZE"
+
+# Verbinde QCOW2-Datei mit /dev/nbd0
+echo "Verbinde QCOW2-Datei mit qemu-nbd..."
+sudo modprobe nbd
+sudo qemu-nbd --connect=/dev/nbd0 "$QCOW2_PATH"
+
+# Partitioniere die QCOW2-Datei
+echo "Partitioniere die QCOW2-Datei..."
+echo -e "o\ny\nn\n\n\n+${EFI_PARTITION_SIZE}\nef00\nn\n\n\n\n0700\nw\ny\n" | sudo gdisk /dev/nbd0
+
+# Formatiere die Partitionen
+echo "Formatiere die Partitionen..."
+sudo mkfs.fat -F32 /dev/nbd0p1
+sudo mkfs.ntfs -f /dev/nbd0p2
+
+# Erstelle Verzeichnisse für die ISO und die Partitionen
+echo "Erstelle Verzeichnisse..."
+sudo mkdir -p /mnt/iso /mnt/efi /mnt/windows
+
+# Mounte die ISO-Datei
+echo "Mount ISO-Datei..."
+sudo mount -o loop "$ISO_PATH" /mnt/iso
+
+# Mounte die EFI- und Windows-Partition
+echo "Mount EFI- und Windows-Partition..."
+sudo mount /dev/nbd0p1 /mnt/efi
+sudo mount /dev/nbd0p2 /mnt/windows
+
+# Übertrage die Windows-Dateien auf die Hauptpartition
+echo "Extrahiere Windows-Dateien auf die Hauptpartition..."
+sudo wimapply /mnt/iso/sources/install.wim 1 /mnt/windows
+
+# Installiere den Windows-Bootloader in der EFI-Partition
+echo "Installiere den Windows-Bootloader in der EFI-Partition..."
+sudo mkdir -p /mnt/efi/EFI/Microsoft/Boot
+sudo cp -r /mnt/windows/Windows/Boot/EFI/* /mnt/efi/EFI/Microsoft/Boot
+
+# Füge die autounattend.xml zur Windows-Partition hinzu
+echo "Füge autounattend.xml zur Windows-Partition hinzu..."
+sudo cp "$AUTO_UNATTEND_PATH" /mnt/windows/
+
+# Unmounten der Partitionen und ISO, sowie Trennen der QCOW2-Datei
+echo "Unmount Partitionen und trenne QCOW2-Datei..."
+sudo umount /mnt/iso /mnt/efi /mnt/windows
+sudo qemu-nbd --disconnect /dev/nbd0
+
+# Bereinigen der Verzeichnisse
+echo "Bereinige erstellte Verzeichnisse..."
+sudo rmdir /mnt/iso /mnt/efi /mnt/windows
+
+# Starte die VM mit benutzerdefinierten Optionen
+echo "Starte die VM..."
+sudo qemu-system-x86_64 \
+  -enable-kvm \
+  -m 4096 \
+  -smp cores=2 \
+  -vga virtio \
+  -display sdl,gl=on \
+  -drive file="$QCOW2_PATH",format=qcow2,if=virtio \
+  -usbdevice tablet \
+  -display gtk,grab-on-hover=on \
+  -cdrom "$ISO_PATH" \
+  -net nic,model=virtio \
+  -net user
+
+echo "Installation abgeschlossen."
