@@ -33,7 +33,7 @@ sudo pacman -Syu --noconfirm qemu wimlib dosfstools ntfs-3g
 ## Schritt-für-Schritt-Anleitung
 
 1. **ISO-Datei herunterladen**:
-   Lade die Windows 11 ISO-Datei von der offiziellen Microsoft-Website herunter und speichere sie im Verzeichnis `~/Dokumente/Daten/ISOs/Windows 11/`. Stelle sicher, dass der Dateiname `Win11_24H2_German_x64.iso` ist.
+   Lade die Windows 11 ISO-Datei von der offiziellen Microsoft-Website herunter und speichere sie im Verzeichnis `/pfad/zu/deiner/datei/Windows 11/`. Stelle sicher, dass der Dateiname `Win11_24H2_German_x64.iso` ist.
 
 2. **QCOW2-Datei erstellen**:
    Erstelle eine QCOW2-Datei für die virtuelle Festplatte:
@@ -47,7 +47,7 @@ sudo pacman -Syu --noconfirm qemu wimlib dosfstools ntfs-3g
 
    ```bash
    sudo modprobe nbd
-   sudo qemu-nbd --connect=/dev/nbd0 ~/Dokumente/Daten/ISOs/Windows 11/windows.qcow2
+   sudo qemu-nbd --connect=/dev/nbd0 /pfad/zu/deiner/datei/windows.qcow2
    ```
 
 4. **Partitionen erstellen mit cfdisk**:
@@ -84,7 +84,7 @@ sudo pacman -Syu --noconfirm qemu wimlib dosfstools ntfs-3g
    Mounte die Windows 11 ISO-Datei:
 
    ```bash
-   sudo mount -o loop ~/Dokumente/Daten/ISOs/Windows 11/Win11_24H2_German_x64.iso /mnt/iso
+   sudo mount -o loop /pfad/zu/deiner/datei/Win11_24H2_German_x64.iso /mnt/iso
    ```
 
 8. **Partitionen mounten**:
@@ -128,9 +128,9 @@ sudo pacman -Syu --noconfirm qemu wimlib dosfstools ntfs-3g
       -smp cores=2 \
       -vga virtio \
       -display sdl,gl=on \
-      -drive file=~/Dokumente/Daten/ISOs/Windows 11/windows.qcow2,format=qcow2,if=virtio \
+      -drive file=/pfad/zu/deiner/datei/windows.qcow2,format=qcow2,if=virtio \
       -usbdevice tablet \
-      -cdrom ~/Dokumente/Daten/ISOs/Windows 11/Win11_24H2_German_x64.iso \
+      -cdrom /pfad/zu/deiner/datei/Win11_24H2_German_x64.iso \
       -net nic,model=virtio \
       -net user
     ```
