@@ -21,13 +21,13 @@ Du kannst die erforderlichen Pakete mit dem folgenden Befehl installieren:
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install -y qemu qemu-kvm wimlib gdisk dosfstools ntfs-3g
+sudo apt install -y qemu qemu-kvm wimlib dosfstools ntfs-3g
 
 # Fedora
-sudo dnf install -y qemu-kvm wimlib gdisk dosfstools ntfs-3g
+sudo dnf install -y qemu-kvm wimlib dosfstools ntfs-3g
 
 # Arch Linux
-sudo pacman -Syu --noconfirm qemu wimlib gdisk dosfstools ntfs-3g
+sudo pacman -Syu --noconfirm qemu wimlib dosfstools ntfs-3g
 ```
 
 ## Schritt-für-Schritt-Anleitung
