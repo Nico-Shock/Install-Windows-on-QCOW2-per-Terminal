@@ -15,15 +15,15 @@ EFI_PARTITION_SIZE="512M"                                                       
 # ================================
 
 # Installiere benötigte Pakete
-echo "Installiere QEMU und wimlib..."
+echo "Installiere QEMU, wimlib und TPM2-Tools..."
 if command -v apt >/dev/null; then
-    sudo apt update && sudo apt install -y qemu qemu-kvm wimtools
+    sudo apt update && sudo apt install -y qemu qemu-kvm wimtools tpm2-tools
 elif command -v dnf >/dev/null; then
-    sudo dnf install -y qemu-kvm qemu-img wimlib
+    sudo dnf install -y qemu-kvm qemu-img wimlib tpm2-tools
 elif command -v pacman >/dev/null; then
-    sudo pacman -Syu --noconfirm qemu-base qemu-emulators-full wimlib
+    sudo pacman -Syu --noconfirm qemu-base qemu-emulators-full wimlib tpm2-tools
 else
-    echo "Paketmanager nicht unterstützt. Installiere QEMU und wimlib manuell."
+    echo "Paketmanager nicht unterstützt. Installiere QEMU, wimlib und TPM2-Tools manuell."
     exit 1
 fi
 
@@ -76,8 +76,8 @@ sudo qemu-nbd --disconnect /dev/nbd0
 echo "Bereinige erstellte Verzeichnisse..."
 sudo rmdir /mnt/iso /mnt/efi /mnt/windows
 
-# Starte die VM mit benutzerdefinierten Optionen
-echo "Starte die VM..."
+# Starte die VM mit TPM 2.0 und Secure Boot
+echo "Starte die VM mit TPM 2.0 und Secure Boot..."
 sudo qemu-system-x86_64 \
   -enable-kvm \
   -m 4096 \
@@ -87,8 +87,13 @@ sudo qemu-system-x86_64 \
   -drive file="$QCOW2_PATH",format=qcow2,if=virtio \
   -usbdevice tablet \
   -display gtk,grab-on-hover=on \
-  -cdrom "$ISO_PATH" \
   -net nic,model=virtio \
-  -net user
+  -net user \
+  -machine type=q35,accel=kvm \
+  -smbios type=2 \
+  -device tpm-tis,port=0x400 \
+  -bios /usr/share/OVMF/OVMF_CODE.fd \
+  -drive file="$QCOW2_PATH",format=qcow2,if=virtio,readonly=on \
+  -boot menu=on,order=d
 
 echo "Installation abgeschlossen."
