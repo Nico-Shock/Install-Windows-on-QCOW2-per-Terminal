@@ -11,6 +11,7 @@ QCOW2_SIZE="70G"                                                                
 EFI_PARTITION="/mnt/efi"                                                                 # Pfad zur EFI-Partition
 WINDOWS_MOUNT="/mnt/windows"                                                              # Mount-Punkt für Windows-Dateien
 ISO_MOUNT="/mnt/iso"                                                                     # Mount-Punkt für die ISO-Datei
+EFI_SOURCE_DIR="$(dirname "$(realpath "$0")")/EFI"                                       # Verzeichnis mit dem EFI-Ordner, der kopiert werden soll
 
 # ================================
 # Funktion zur Bereinigung
@@ -139,20 +140,31 @@ if ! sudo mount -o loop "$ISO_PATH" "$ISO_MOUNT"; then
     exit 1
 fi
 
-# Übertrage das Windows-Image mit wimapply
-echo "Übernehme Windows-Image..."
+# Übertrage die WIM-Datei direkt auf die Windows-Partition mit Fortschrittsanzeige
+echo "Übernehme Windows-Image... (0%)"
 if ! sudo wimapply "$ISO_MOUNT/sources/install.wim" 1 "$WINDOWS_MOUNT"; then
     echo "[ERROR] Fehler beim Übernehmen des Windows-Images."
     cleanup
     exit 1
 fi
 
-# Kopiere die Bootdateien von der ISO zur EFI-Partition
-echo "Kopiere die Bootdateien in die EFI-Partition..."
-sudo cp -r "$ISO_MOUNT/efi/"* "$EFI_PARTITION/"
+echo -ne "\rÜbernehme Windows-Image... (100%)\n"
+
+# Kopiere den EFI-Ordner auf die EFI-Partition
+echo "Kopiere den EFI-Ordner auf die EFI-Partition..."
+if [[ ! -d "$EFI_SOURCE_DIR" ]]; then
+    echo "[ERROR] EFI-Ordner nicht gefunden: $EFI_SOURCE_DIR"
+    cleanup
+    exit 1
+fi
+
+if ! sudo cp -R "$EFI_SOURCE_DIR/"* "$EFI_PARTITION/"; then
+    echo "[ERROR] Fehler beim Kopieren des EFI-Ordners in die EFI-Partition."
+    cleanup
+    exit 1
+fi
 
 # Bereinige und trenne die Verbindungen
-echo "Übertragung des Windows-Images abgeschlossen."
 cleanup
 
 # Starte die VM mit TPM 2.0 und Secure Boot
@@ -163,13 +175,10 @@ sudo qemu-system-x86_64 \
   -smp cores=2 \
   -vga virtio \
   -display sdl,gl=on \
-  -drive file="$QCOW2_PATH",format=qcow2,if=virtio \
   -usbdevice tablet \
   -display gtk,grab-on-hover=on \
   -net nic,model=virtio \
   -net user \
   -machine type=q35,accel=kvm \
   -smbios type=2 \
-  -device tpm-tis,port=0x400 \
-  -bios /usr/share/OVMF/OVMF_CODE.fd \
   -boot menu=on,order=d
