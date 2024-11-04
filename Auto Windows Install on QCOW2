@@ -139,29 +139,37 @@ if ! sudo mount -o loop "$ISO_PATH" "$ISO_MOUNT"; then
     exit 1
 fi
 
-# Übertrage das Installations-Image mit wimapply
-echo "Übertrage Windows-Image auf die Windows-Partition..."
+# Übertrage das Windows-Image mit wimapply
+echo "Übernehme Windows-Image..."
 if ! sudo wimapply "$ISO_MOUNT/sources/install.wim" 1 "$WINDOWS_MOUNT"; then
-    echo "[ERROR] Fehler beim Übertragen des Windows-Image."
+    echo "[ERROR] Fehler beim Übernehmen des Windows-Images."
     cleanup
     exit 1
 fi
+
+# Kopiere die Bootdateien von der ISO zur EFI-Partition
+echo "Kopiere die Bootdateien in die EFI-Partition..."
+sudo cp -r "$ISO_MOUNT/efi/"* "$EFI_PARTITION/"
 
 # Bereinige und trenne die Verbindungen
+echo "Übertragung des Windows-Images abgeschlossen."
 cleanup
 
-# Installiere den Windows-Bootloader
-echo "Installiere den Windows-Bootloader..."
-if ! sudo bcdboot "$WINDOWS_MOUNT/Windows" /s "$EFI_PARTITION" /f UEFI; then
-    echo "[ERROR] Fehler beim Installieren des Bootloaders."
-    cleanup
-    exit 1
-fi
-
-# Starte die Windows-Installation mit QEMU
-echo "Installation vorbereitet. Starte QEMU..."
-if ! sudo qemu-system-x86_64 -hda "$QCOW2_PATH" -boot d -cdrom "$ISO_PATH" -m 4096 -enable-kvm; then
-    echo "[ERROR] QEMU konnte nicht gestartet werden. Überprüfe, ob das QCOW2-Image von einem anderen Prozess verwendet wird."
-    cleanup
-    exit 1
-fi
+# Starte die VM mit TPM 2.0 und Secure Boot
+echo "Starte die VM mit TPM 2.0 und Secure Boot..."
+sudo qemu-system-x86_64 \
+  -enable-kvm \
+  -m 4096 \
+  -smp cores=2 \
+  -vga virtio \
+  -display sdl,gl=on \
+  -drive file="$QCOW2_PATH",format=qcow2,if=virtio \
+  -usbdevice tablet \
+  -display gtk,grab-on-hover=on \
+  -net nic,model=virtio \
+  -net user \
+  -machine type=q35,accel=kvm \
+  -smbios type=2 \
+  -device tpm-tis,port=0x400 \
+  -bios /usr/share/OVMF/OVMF_CODE.fd \
+  -boot menu=on,order=d
