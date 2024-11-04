@@ -8,92 +8,160 @@
 ISO_PATH="/home/nico-shock/Dokumente/Daten/ISOs/Windows 11/Win11_24H2_German_x64.iso"  # Pfad zur Windows-ISO-Datei
 QCOW2_PATH="./windows.qcow2"                                                             # Pfad zur zu erstellenden QCOW2-Datei im aktuellen Verzeichnis
 QCOW2_SIZE="70G"                                                                         # Größe der QCOW2-Datei
-EFI_PARTITION_SIZE="512M"                                                                # Größe der EFI-Partition
+EFI_PARTITION="/mnt/efi"                                                                 # Pfad zur EFI-Partition
+WINDOWS_MOUNT="/mnt/windows"                                                              # Mount-Punkt für Windows-Dateien
+ISO_MOUNT="/mnt/iso"                                                                     # Mount-Punkt für die ISO-Datei
+
+# ================================
+# Funktion zur Bereinigung
+# ================================
+cleanup() {
+    echo "Bereinige und trenne die Verbindungen..."
+    sudo umount "$EFI_PARTITION" 2>/dev/null
+    sudo umount "$WINDOWS_MOUNT" 2>/dev/null
+    sudo umount "$ISO_MOUNT" 2>/dev/null
+    sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null
+    sudo rmdir "$EFI_PARTITION" 2>/dev/null
+    sudo rmdir "$WINDOWS_MOUNT" 2>/dev/null
+    sudo rmdir "$ISO_MOUNT" 2>/dev/null
+}
 
 # ================================
 # Start der Automatisierung
 # ================================
 
 # Installiere benötigte Pakete
-echo "Installiere QEMU, wimlib und TPM2-Tools..."
+echo "Installiere QEMU, wimlib und tpm2-tools..."
 if command -v apt >/dev/null; then
-    sudo apt update && sudo apt install -y qemu qemu-kvm wimtools tpm2-tools ovmf
+    sudo apt update && sudo apt install -y qemu qemu-kvm wimlib tpm2-tools
 elif command -v dnf >/dev/null; then
-    sudo dnf install -y qemu-kvm qemu-img wimlib tpm2-tools ovmf
+    sudo dnf install -y qemu-kvm wimlib tpm2-tools
 elif command -v pacman >/dev/null; then
-    sudo pacman -Syu --noconfirm qemu-base qemu-emulators-full wimlib tpm2-tools ovmf
+    sudo pacman -Syu --noconfirm qemu-base qemu-emulators-full wimlib tpm2-tools
 else
-    echo "Paketmanager nicht unterstützt. Installiere QEMU, wimlib und TPM2-Tools manuell."
+    echo "Paketmanager nicht unterstützt. Bitte installiere QEMU, wimlib und tpm2-tools manuell."
     exit 1
 fi
 
 # Erstelle die QCOW2-Datei
 echo "Erstelle QCOW2-Datei..."
-qemu-img create -f qcow2 "$QCOW2_PATH" "$QCOW2_SIZE"
+if ! qemu-img create -f qcow2 "$QCOW2_PATH" "$QCOW2_SIZE"; then
+    echo "[ERROR] Fehler beim Erstellen der QCOW2-Datei."
+    cleanup
+    exit 1
+fi
 
-# Verbinde QCOW2-Datei mit /dev/nbd0
+# Verbinde QCOW2-Datei mit qemu-nbd
 echo "Verbinde QCOW2-Datei mit qemu-nbd..."
-sudo modprobe nbd
-sudo qemu-nbd --connect=/dev/nbd0 "$QCOW2_PATH"
+if ! sudo modprobe nbd max_part=16; then
+    echo "[WARNING] Fehler beim Laden des nbd-Moduls, versuche es erneut..."
+    if ! sudo modprobe nbd; then
+        echo "[ERROR] NBD-Modul konnte nicht geladen werden. Abbruch."
+        cleanup
+        exit 1
+    fi
+fi
 
-# Partitioniere die QCOW2-Datei
-echo "Partitioniere die QCOW2-Datei..."
-echo -e "o\ny\nn\n\n\n+${EFI_PARTITION_SIZE}\nef00\nn\n\n\n\n\n0700\nw\ny\n" | sudo gdisk /dev/nbd0
+if ! sudo qemu-nbd --connect=/dev/nbd0 "$QCOW2_PATH"; then
+    echo "[ERROR] Fehler beim Verbinden der QCOW2-Datei mit /dev/nbd0."
+    cleanup
+    exit 1
+fi
 
-# Formatiere die Partitionen
-echo "Formatiere die Partitionen..."
-sudo mkfs.fat -F32 /dev/nbd0p1  # EFI-Partition
-sudo mkfs.ntfs -f /dev/nbd0p2   # Microsoft Basic Data-Partition
+# Erstelle die Partitionen automatisch
+echo "Erstelle EFI-Partition und Windows-Partition..."
+if ! sudo parted /dev/nbd0 --script mklabel gpt; then
+    echo "[ERROR] Fehler beim Erstellen des Partitionstyps."
+    cleanup
+    exit 1
+fi
 
-# Erstelle Verzeichnisse für die ISO und die Partitionen
-echo "Erstelle Verzeichnisse..."
-sudo mkdir -p /mnt/iso /mnt/efi /mnt/windows
+if ! sudo parted /dev/nbd0 --script mkpart primary fat32 1MiB 201MiB; then
+    echo "[ERROR] Fehler beim Erstellen der EFI-Partition."
+    cleanup
+    exit 1
+fi
 
-# Mounte die ISO-Datei
-echo "Mount ISO-Datei..."
-sudo mount -o loop "$ISO_PATH" /mnt/iso
+if ! sudo parted /dev/nbd0 --script mkpart primary ntfs 201MiB 100%; then
+    echo "[ERROR] Fehler beim Erstellen der Windows-Partition."
+    cleanup
+    exit 1
+fi
 
-# Mounte die EFI- und Windows-Partition
-echo "Mount EFI- und Windows-Partition..."
-sudo mount /dev/nbd0p1 /mnt/efi
-sudo mount /dev/nbd0p2 /mnt/windows
+# Mounten der Partitionen
+echo "Mounten der Partitionen..."
+sudo mkdir -p "$EFI_PARTITION" "$WINDOWS_MOUNT" "$ISO_MOUNT"
 
-# Übertrage die Windows-Dateien auf die Hauptpartition
-echo "Extrahiere Windows-Dateien auf die Hauptpartition..."
-sudo wimapply /mnt/iso/sources/install.wim 1 /mnt/windows
+# Formatieren der EFI-Partition im FAT32
+if ! sudo mkfs.vfat -n "EFI" /dev/nbd0p1; then
+    echo "[ERROR] Fehler beim Formatieren der EFI-Partition."
+    cleanup
+    exit 1
+fi
 
-# Installiere den Windows-Bootloader in der EFI-Partition
-echo "Installiere den Windows-Bootloader in der EFI-Partition..."
-sudo mkdir -p /mnt/efi/EFI/Microsoft/Boot
-sudo cp -r /mnt/windows/Windows/Boot/EFI/* /mnt/efi/EFI/Microsoft/Boot
+# Mounten der EFI-Partition
+if ! sudo mount /dev/nbd0p1 "$EFI_PARTITION"; then
+    echo "[ERROR] Fehler beim Mounten der EFI-Partition."
+    cleanup
+    exit 1
+else
+    echo "EFI-Partition erfolgreich gemountet."
+fi
 
-# Unmounten der Partitionen und ISO, sowie Trennen der QCOW2-Datei
-echo "Unmount Partitionen und trenne QCOW2-Datei..."
-sudo umount /mnt/iso /mnt/efi /mnt/windows
-sudo qemu-nbd --disconnect /dev/nbd0
+# Formatieren der Windows-Partition im NTFS
+if ! sudo mkfs.ntfs -f -L "Windows" /dev/nbd0p2; then
+    echo "[ERROR] Fehler beim Formatieren der Windows-Partition."
+    cleanup
+    exit 1
+fi
 
-# Bereinigen der Verzeichnisse
-echo "Bereinige erstellte Verzeichnisse..."
-sudo rmdir /mnt/iso /mnt/efi /mnt/windows
+# Mounten der Windows-Partition
+if ! sudo mount /dev/nbd0p2 "$WINDOWS_MOUNT"; then
+    echo "[ERROR] Fehler beim Mounten der Windows-Partition."
+    cleanup
+    exit 1
+else
+    echo "Windows-Partition erfolgreich gemountet."
+fi
 
-# Starte die VM mit TPM 2.0 und Secure Boot
-echo "Starte die VM mit TPM 2.0 und Secure Boot..."
-sudo qemu-system-x86_64 \
-  -enable-kvm \
-  -m 4096 \
-  -smp cores=2 \
-  -vga virtio \
-  -display sdl,gl=on \
-  -drive file="$QCOW2_PATH",format=qcow2,if=virtio \
-  -usbdevice tablet \
-  -display gtk,grab-on-hover=on \
-  -net nic,model=virtio \
-  -net user \
-  -machine type=q35,accel=kvm \
-  -smbios type=2 \
-  -device tpm-tis,port=0x400 \
-  -bios /usr/share/OVMF/OVMF_CODE.fd \
-  -drive file="$QCOW2_PATH",format=qcow2,if=virtio,readonly=on \
-  -boot menu=on,order=d
+# Überprüfe, ob die ISO-Datei gültig ist
+if [[ ! -f "$ISO_PATH" ]]; then
+    echo "[ERROR] Die ISO-Datei wurde nicht gefunden: $ISO_PATH"
+    cleanup
+    exit 1
+fi
 
-echo "Installation abgeschlossen."
+# Mounten der ISO-Datei
+echo "Mounten der ISO-Datei..."
+if ! sudo mount -o loop "$ISO_PATH" "$ISO_MOUNT"; then
+    echo "[ERROR] Fehler beim Mounten der ISO-Datei."
+    cleanup
+    exit 1
+fi
+
+# Übertrage das Installations-Image mit wimapply
+echo "Übertrage Windows-Image auf die Windows-Partition..."
+if ! sudo wimapply "$ISO_MOUNT/sources/install.wim" 1 "$WINDOWS_MOUNT"; then
+    echo "[ERROR] Fehler beim Übertragen des Windows-Image."
+    cleanup
+    exit 1
+fi
+
+# Bereinige und trenne die Verbindungen
+cleanup
+
+# Installiere den Windows-Bootloader
+echo "Installiere den Windows-Bootloader..."
+if ! sudo bcdboot "$WINDOWS_MOUNT/Windows" /s "$EFI_PARTITION" /f UEFI; then
+    echo "[ERROR] Fehler beim Installieren des Bootloaders."
+    cleanup
+    exit 1
+fi
+
+# Starte die Windows-Installation mit QEMU
+echo "Installation vorbereitet. Starte QEMU..."
+if ! sudo qemu-system-x86_64 -hda "$QCOW2_PATH" -boot d -cdrom "$ISO_PATH" -m 4096 -enable-kvm; then
+    echo "[ERROR] QEMU konnte nicht gestartet werden. Überprüfe, ob das QCOW2-Image von einem anderen Prozess verwendet wird."
+    cleanup
+    exit 1
+fi
