@@ -9,7 +9,6 @@ ISO_PATH="/home/nico-shock/Dokumente/Daten/ISOs/Windows 11/Win11_24H2_German_x64
 QCOW2_PATH="./windows.qcow2"                                                             # Pfad zur zu erstellenden QCOW2-Datei im aktuellen Verzeichnis
 QCOW2_SIZE="70G"                                                                         # Größe der QCOW2-Datei
 EFI_PARTITION_SIZE="512M"                                                                # Größe der EFI-Partition
-AUTO_UNATTEND_PATH="./autounattend.xml"                                                  # Pfad zur Autounattend-Datei (wird im aktuellen Verzeichnis gesucht)
 
 # ================================
 # Start der Automatisierung
@@ -39,12 +38,12 @@ sudo qemu-nbd --connect=/dev/nbd0 "$QCOW2_PATH"
 
 # Partitioniere die QCOW2-Datei
 echo "Partitioniere die QCOW2-Datei..."
-echo -e "o\ny\nn\n\n\n+${EFI_PARTITION_SIZE}\nef00\nn\n\n\n\n0700\nw\ny\n" | sudo gdisk /dev/nbd0
+echo -e "o\ny\nn\n\n\n+${EFI_PARTITION_SIZE}\nef00\nn\n\n\n\n\n0700\nw\ny\n" | sudo gdisk /dev/nbd0
 
 # Formatiere die Partitionen
 echo "Formatiere die Partitionen..."
-sudo mkfs.fat -F32 /dev/nbd0p1
-sudo mkfs.ntfs -f /dev/nbd0p2
+sudo mkfs.fat -F32 /dev/nbd0p1  # EFI-Partition
+sudo mkfs.ntfs -f /dev/nbd0p2   # Microsoft Basic Data-Partition
 
 # Erstelle Verzeichnisse für die ISO und die Partitionen
 echo "Erstelle Verzeichnisse..."
@@ -67,10 +66,6 @@ sudo wimapply /mnt/iso/sources/install.wim 1 /mnt/windows
 echo "Installiere den Windows-Bootloader in der EFI-Partition..."
 sudo mkdir -p /mnt/efi/EFI/Microsoft/Boot
 sudo cp -r /mnt/windows/Windows/Boot/EFI/* /mnt/efi/EFI/Microsoft/Boot
-
-# Füge die autounattend.xml zur Windows-Partition hinzu
-echo "Füge autounattend.xml zur Windows-Partition hinzu..."
-sudo cp "$AUTO_UNATTEND_PATH" /mnt/windows/
 
 # Unmounten der Partitionen und ISO, sowie Trennen der QCOW2-Datei
 echo "Unmount Partitionen und trenne QCOW2-Datei..."
