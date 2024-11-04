@@ -39,7 +39,7 @@ sudo pacman -Syu --noconfirm qemu wimlib dosfstools ntfs-3g
    Erstelle eine QCOW2-Datei für die virtuelle Festplatte:
 
    ```bash
-   qemu-img create -f qcow2 11/windows.qcow2 70G
+   qemu-img create -f qcow2 windows.qcow2 70G
    ```
 
 3. **QCOW2-Datei mit NBD verbinden**:
