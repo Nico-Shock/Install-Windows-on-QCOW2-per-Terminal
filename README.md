@@ -134,6 +134,11 @@ sudo pacman -Syu --noconfirm qemu wimlib dosfstools ntfs-3g
       -net nic,model=virtio \
       -net user
     ```
+13. **Optional: QCOW2 in VMDK Konvertieren**:
+
+```
+qemu-img convert -f qcow2 -O vmdk windows.qcow2 windows.vmdk
+```
 
 ## Wichtige Hinweise
 
