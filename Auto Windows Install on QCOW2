@@ -17,11 +17,11 @@ EFI_PARTITION_SIZE="512M"                                                       
 # Installiere benötigte Pakete
 echo "Installiere QEMU, wimlib und TPM2-Tools..."
 if command -v apt >/dev/null; then
-    sudo apt update && sudo apt install -y qemu qemu-kvm wimtools tpm2-tools
+    sudo apt update && sudo apt install -y qemu qemu-kvm wimtools tpm2-tools ovmf
 elif command -v dnf >/dev/null; then
-    sudo dnf install -y qemu-kvm qemu-img wimlib tpm2-tools
+    sudo dnf install -y qemu-kvm qemu-img wimlib tpm2-tools ovmf
 elif command -v pacman >/dev/null; then
-    sudo pacman -Syu --noconfirm qemu-base qemu-emulators-full wimlib tpm2-tools
+    sudo pacman -Syu --noconfirm qemu-base qemu-emulators-full wimlib tpm2-tools ovmf
 else
     echo "Paketmanager nicht unterstützt. Installiere QEMU, wimlib und TPM2-Tools manuell."
     exit 1
