@@ -1,5 +1,7 @@
 # Manuelle Windows 11 Installation mit QEMU
 
+# KEIN BOCK DEN SCRIPT WEITER ZU MACHEN, WER WILL KANN DEN CODE WEITERFÜHREN ODER ANDEREN STUFF DAMIT MACHEN
+
 # SCRIPT WURDE VON CHATGPT GESCHRIEBEN!!!
 
 Dieses Dokument beschreibt die Schritte zur manuellen Installation von Windows 11 auf einem QEMU-virtuellen Computer mit UEFI-Unterstützung, TPM 2.0 und Secure Boot.
